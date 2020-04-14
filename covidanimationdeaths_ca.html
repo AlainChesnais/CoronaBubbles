@@ -1,0 +1,295 @@
+<html>
+<head>
+  <title>COVID progression graph - animated</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta property="og:title" content="COVID progression graph - animated">
+    <meta property="og:site_name" content="primomonitum.com">
+    <meta property="og:url" content="http://primomonitum.com/covidanimationdeaths.html">
+    <meta property="og:description" content="An interactive tool for viewing the spread of the COVID-19 over time.">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="http://primomonitum.com/covidanimation.png">
+    <script src="deaths.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <link rel="stylesheet" href="CoronaBubbles.css">
+    <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/themes/smoothness/jquery-ui.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.1/jquery-ui.min.js"></script>
+    <script type="text/javascript">
+        google.charts.load("current", {packages:["corechart"]});
+        google.charts.setOnLoadCallback(drawChart);
+        var animOK = false;
+        var totalDays = 0;
+        var chart;
+        var currentFrame = 0;
+        var isAnimating = false;
+
+        var hilites      = {};
+        var dataFrames   = [];
+        var optionFrames = [];
+        var tracked      = {
+            "Alberta": "AB",
+            "British Columbia": "BC",
+            "Manitoba": "MB",
+            "New Brunswick": "NB",
+            "Newfoundland and Labrador": "NL",
+            "Nova Scotia": "NS",
+            "Ontario": "ON",
+            "Prince Edward Island": "PE",
+            "Quebec": "QC",
+            "Saskatchewan": "SK",
+            "Northwest Territories": "NT",
+            "Yukon": "YT"
+        };
+        
+        theData.countries = theData["Canada"];
+
+    function getUrlParameter(name) {
+      name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+      var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+      var results = regex.exec(location.search);
+      return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+    };
+    function getGrowth(frame, country) {
+      const filterWidth = 7
+      var filter = filterWidth;
+      var ratio = 1;
+      if ((frame < 1) || (frame>= theData.days.length)) return (0);
+      if (theData.countries[country][frame - 1] == 0) return (0);
+      if (filter > frame - 1){
+        filter = Math.max(frame - 1, 1);
+      }
+      while ((theData.countries[country][frame - filter] == 0) && (filter > 1)) {
+        filter--;
+      }
+      ratio = (theData.countries[country][frame]/theData.countries[country][frame-filter]);
+      return (100*(Math.pow(ratio,1/filterWidth) - 1)); 
+    }
+
+    function makeDataAndOptions(frame) {
+      var country;
+      var frameDataArray = [['ID', 'Percentage Daily Growth',      'Deaths',      'Status',     'New Deaths']];
+      var yesterday = (frame == 0)?0:frame - 1;
+      var today = frame;
+
+
+      var dataAndOptions = {
+        frameOptions : {
+          title: 'Deaths vs Percentage Daily Growth in Canada on ' + theData.days[frame],
+          legend: 'none',
+          tooltip: {"trigger": 'both'},
+          hAxis: {title: 'Percentage Daily Growth', minValue: -5, maxValue: 20},
+          vAxis: {title: 'Number of Deaths', minValue: 1, maxValue: 100000, scaleType: 'log', format: 'short'},
+          sizeAxis: {minSize: 12},
+          bubble: {
+            textStyle: {
+              auraColor: 'none',
+            }
+          }
+        }
+      }
+      Object.keys(tracked).forEach((country,index) => {
+        if (theData.countries[country][today] < theData.countries[country][yesterday]) {
+          var tomorrow = (frame < theData.days.length - 1)?frame+1:yesterday;
+          theData.countries[country][today] = 
+              Math.floor((theData.countries[country][yesterday] + theData.countries[country][tomorrow])/2);
+        }
+        var theGrowth = getGrowth(frame, country);
+        frameDataArray.push([
+          tracked[country],
+          theGrowth,
+          theData.countries[country][today],
+          (hilites[country] === undefined)?"standard":"hilighted",
+          (frame == 0)?theData.countries[country][today]:
+                theData.countries[country][today] - theData.countries[country][yesterday]
+      ])
+      })
+      dataAndOptions.frameData = 
+        google.visualization.arrayToDataTable(frameDataArray);
+      return(dataAndOptions);
+    }
+
+    function drawChart() {
+      var myFrameData = makeDataAndOptions(theData.days.length - 1);
+      var data    = myFrameData.frameData;
+      var options = myFrameData.frameOptions;
+      currentFrame = theData.days.length - 1
+      document.body.onresize = function () {
+          gotoFrame(currentFrame);
+      };
+      chart = new google.visualization.BubbleChart(document.getElementById('noAura'));
+      chart.draw(data, options);
+      google.visualization.events.addListener(chart, 'animationfinish',    animateChart);
+      $('#slider').slider( "value", 100);
+      $('#custom-handle').text(theData.days[theData.days.length - 1]);
+    }
+
+    function gotoFrame(frame) {
+      var myFrameData = makeDataAndOptions(frame);
+      var data    = myFrameData.frameData;
+      var options = myFrameData.frameOptions;
+      options.animation = {
+        duration: 1000,
+        easing: 'inAndOut'
+      }
+      currentFrame = frame;
+      chart.draw(data,options);
+      $('#slider').slider( "value", frame);
+      $('#custom-handle').text(theData.days[frame]);
+    }
+
+    function animateChart() {
+      if ((currentFrame < theData.days.length - 1) && isAnimating){
+        gotoFrame(++currentFrame);
+      } else {
+        isAnimating = false;
+      }
+    }
+
+    $(document).ready(function() {
+      var playButton   = document.getElementById('play');
+      var pauseButton  = document.getElementById('pause');
+      var resetButton  = document.getElementById('reset');
+      var nextButton   = document.getElementById('next');
+      var prevButton   = document.getElementById('previous');
+      var addCButton   = document.getElementById('addCountry');
+      var captureButton= document.getElementById('capture');
+      var theCountryQS = getUrlParameter("country");
+
+      if (theCountryQS.length > 0) {
+        {
+          var allTheCountries = theCountryQS.split('_');
+          allTheCountries.forEach(function (value, index) {
+            var theCountryArray = value.split(":");
+            if (theCountryArray.length < 2) {
+              theCountryArray[1] = theCountryArray[0].substring(0,2)
+            }  
+            if (theData.countries[theCountryArray[0]]  === undefined) {
+              alert("unknown country: " + theCountryArray[0])
+            } else {
+              tracked[theCountryArray[0]] = theCountryArray[1];
+              hilites[theCountryArray[0]] = theCountryArray[1];          
+            }
+          })
+        }
+      }
+
+      captureButton.onclick = function () {
+        var a = document.createElement('a');
+        a.download = "CA_deaths_" + theData.days[currentFrame].replace(/\//g, "_") + ".png";
+        a.href = chart.getImageURI();
+        a.click();
+      }
+      
+      playButton.onclick = function () {
+        isAnimating = true;
+        if (currentFrame == theData.days.length - 1) {
+          gotoFrame(0);
+        } else {
+          animateChart();
+        }
+      }
+      resetButton.onclick = function () {
+        isAnimating = false;
+        gotoFrame(0);
+      }
+      pauseButton.onclick = function () {
+        isAnimating = false;
+      }
+
+      nextButton.onclick = function () {
+        isAnimating = false;
+        if (++currentFrame < theData.days.length) {
+          gotoFrame(currentFrame);
+        } else {
+          currentFrame = 0;
+          gotoFrame(0);
+        }
+      }
+
+      prevButton.onclick = function () {
+        isAnimating = false;
+        if (currentFrame > 0) {
+          gotoFrame(--currentFrame);
+        } else {
+          gotoFrame(theData.days.length - 1);
+        }
+      }
+      addCButton.onclick = function () {
+        var theCountry = $('#countryName').val();
+        var theCC      = $('#countryCode').val();
+        if ((theCountry.length == 0) || (theCC.length == 0)){
+          alert("Please fill both fields");
+          return;
+        } 
+        if (theData.countries[theCountry]  === undefined) {
+          alert("unknown country: " + theCountry)
+          return
+        }
+        
+        tracked[theCountry] = theCC;
+        hilites[theCountry] = theCC;
+        var mySearch="country=";
+        var sep = "";
+        Object.keys(hilites).forEach((country,index) => {
+          mySearch += sep + country + ":" + hilites[country];
+          sep = "_";
+        });
+        location.search = mySearch;
+      }
+      $('#countryName').autocomplete({
+        source: Object.keys(theData.countries)
+      });
+      var handle = $( "#custom-handle" );
+      $( "#slider" ).slider({
+        min: 0,
+        max: theData.days.length - 1,
+        create: function() {
+          handle.text( theData.days[$(this).slider( "value" )]);
+        },
+        slide: function( event, ui ) {
+          handle.text( theData.days[ui.value]);
+        },
+        stop: function( event, ui ) {
+          isAnimating = false;
+          gotoFrame(ui.value);
+        }
+      });
+
+    })
+  </script>
+  <!-- Global site tag (gtag.js) - Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=UA-148213917-1"></script>
+  <script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'UA-148213917-1');
+  </script>
+</head>
+<body>
+  <div id="pages" ><a href="covidanimation.html">global stats</a> | <a href="covidanimation_us.html">US stats</a> | <a href="covidanimation_ca.html">CA stats</a> | <a href="covidanimation_au.html">AU stats</a> | <a href="covidanimationdeaths.html">global deaths</a> | <a href="covidanimationdeaths_us.html">US deaths</a> | <a href="covidanimationdeaths_ca.html">CA deaths</a> | <a href="covidanimationdeaths_au.html">AU deaths</a></div>
+  <div id="noAura"></div>
+  <br />
+  <div id="input">
+    <button id='play' title="start animating from the current frame">Play</button>
+    <button id='pause' title="pause the animation">Pause</button>
+    <button id='reset' title="go to the start frame">Reset</button>
+    <button id='previous' title="back one frame">-</button>
+    <button id='next' title="forward one frame">+</button>
+    <button id='capture' title="save as an image">capture</button>
+    <br /> <br />
+    <div id="slider">
+      <div id="custom-handle" class="ui-slider-handle"></div>
+    </div>    
+    <br />
+    <label for="countryName">Province Name</label>
+    <input id="countryName" title="the name of the province"> 
+    <label for="countryCode" >Province Code</label>
+    <input type="text" id="countryCode" title="the 2 letter province code" />
+    <button id="addCountry">Add</button>
+    <br /><br />
+    <a href="https://youtu.be/0NxjwhE4ino" target="_blank">Watch the tutorial</a> | 
+    <a href="https://forms.gle/qzPtr69XxXBGDYyP7" target="_blank">Submit a feature request</a>
+  </div>
+</body>
+</html>
